@@ -78,3 +78,43 @@ func TestPageHandler_MissingFile_500(t *testing.T) {
 		t.Errorf("status = %d, want 500", rr.Code)
 	}
 }
+
+func TestRenderPage_IncludesSidebarAndStaticAssets(t *testing.T) {
+	page, err := renderPage("README.md", []byte("# Hi\n"))
+	if err != nil {
+		t.Fatalf("renderPage: %v", err)
+	}
+	pageStr := string(page)
+	for _, want := range []string{
+		`href="/static/peek.css"`,
+		`src="/static/peek.js"`,
+		`id="peek-sidebar"`,
+		`id="peek-notes"`,
+	} {
+		if !strings.Contains(pageStr, want) {
+			t.Errorf("page missing %q", want)
+		}
+	}
+}
+
+func TestStaticHandler_ServesEmbeddedAssets(t *testing.T) {
+	h := newStaticHandler()
+	for _, c := range []struct {
+		path, ct string
+	}{
+		{"/peek.js", "javascript"},
+		{"/peek.css", "css"},
+	} {
+		rr := httptest.NewRecorder()
+		h.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, c.path, nil))
+		if rr.Code != http.StatusOK {
+			t.Errorf("%s status = %d, want 200; body=%s", c.path, rr.Code, rr.Body.String())
+		}
+		if ct := rr.Header().Get("Content-Type"); !strings.Contains(ct, c.ct) {
+			t.Errorf("%s Content-Type = %q, want to contain %q", c.path, ct, c.ct)
+		}
+		if rr.Body.Len() == 0 {
+			t.Errorf("%s body empty", c.path)
+		}
+	}
+}

@@ -39,6 +39,7 @@ func main() {
 
 	mux := http.NewServeMux()
 	mux.Handle("GET /{$}", newPageHandler(path))
+	mux.Handle("GET /static/", http.StripPrefix("/static/", newStaticHandler()))
 	mux.Handle("/annotations", api)
 	mux.Handle("/annotations/", api)
 

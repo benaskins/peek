@@ -2,8 +2,10 @@ package main
 
 import (
 	"bytes"
+	"embed"
 	"fmt"
 	"html"
+	"io/fs"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -18,12 +20,16 @@ import (
 	htmlrenderer "github.com/yuin/goldmark/renderer/html"
 )
 
+//go:embed web
+var webFS embed.FS
+
 const pageTmpl = `<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <title>%s</title>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/github-markdown-css@5/github-markdown.min.css">
+<link rel="stylesheet" href="/static/peek.css">
 <style>
   body { box-sizing: border-box; min-width: 200px; max-width: 980px; margin: 0 auto; padding: 45px; background: #ffffff; color: #1f2328; }
   @media (max-width: 767px) { body { padding: 15px; } }
@@ -42,11 +48,21 @@ const pageTmpl = `<!doctype html>
 <article class="markdown-body">
 %s
 </article>
+<aside id="peek-sidebar" class="peek-sidebar" aria-label="Annotations">
+  <div class="peek-sidebar-header">
+    <h2>Notes</h2>
+    <button id="peek-collapse" type="button" class="peek-collapse-btn" aria-label="Collapse sidebar">›</button>
+  </div>
+  <div class="peek-sidebar-content">
+    <div id="peek-notes"></div>
+  </div>
+</aside>
 <script type="module">
   import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
   const dark = matchMedia('(prefers-color-scheme: dark)').matches;
   mermaid.initialize({ startOnLoad: true, theme: dark ? 'dark' : 'default' });
 </script>
+<script src="/static/peek.js" defer></script>
 </body>
 </html>
 `
@@ -76,6 +92,14 @@ func renderPage(path string, src []byte) ([]byte, error) {
 
 	page := fmt.Sprintf(pageTmpl, html.EscapeString(filepath.Base(path)), light, dark, body.String())
 	return []byte(page), nil
+}
+
+func newStaticHandler() http.Handler {
+	sub, err := fs.Sub(webFS, "web")
+	if err != nil {
+		panic(fmt.Sprintf("embed sub fs: %v", err))
+	}
+	return http.FileServer(http.FS(sub))
 }
 
 func newPageHandler(path string) http.Handler {
