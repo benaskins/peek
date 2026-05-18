@@ -1,8 +1,8 @@
-// peek annotation sidebar — fetches /annotations and renders notes grouped
-// by their nearest preceding heading. Read-only for now; mutation handlers
-// land in later steps.
+// peek annotation sidebar — fetches /annotations, renders the sidebar,
+// and wires per-block markers + inline note-input forms.
 
 const HASH_PREFIX = 'peek-';
+const MAX_ANCHOR_TEXT = 200;
 
 async function loadNotes() {
   const res = await fetch('/annotations');
@@ -105,6 +105,133 @@ function renderError(message) {
   container.appendChild(p);
 }
 
+function injectMarkers() {
+  for (const block of document.querySelectorAll('[data-peek-block]')) {
+    if (block.querySelector(':scope > .peek-marker')) continue;
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'peek-marker';
+    btn.setAttribute('aria-label', 'Add note');
+    btn.textContent = '+';
+    block.appendChild(btn);
+  }
+}
+
+function updateMarkers(notes) {
+  const annotated = new Set();
+  for (const n of notes) annotated.add(n.anchor?.block_hash);
+  for (const block of document.querySelectorAll('[data-peek-block]')) {
+    const hash = block.id.slice(HASH_PREFIX.length);
+    const marker = block.querySelector(':scope > .peek-marker');
+    if (!marker) continue;
+    const has = annotated.has(hash);
+    marker.classList.toggle('has-notes', has);
+    marker.setAttribute('aria-label', has ? 'Add another note' : 'Add note');
+  }
+}
+
+function detectBlockType(block) {
+  const first = block.firstElementChild;
+  if (!first) return 'block';
+  const tag = first.tagName.toLowerCase();
+  if (/^h[1-6]$/.test(tag)) return 'heading';
+  if (tag === 'p') return 'paragraph';
+  if (tag === 'ul' || tag === 'ol') return 'list';
+  if (tag === 'blockquote') return 'blockquote';
+  if (tag === 'pre') return 'code';
+  if (tag === 'div' && first.classList.contains('mermaid')) return 'mermaid';
+  return tag;
+}
+
+function blockText(block) {
+  const clone = block.cloneNode(true);
+  for (const el of clone.querySelectorAll('.peek-marker, .peek-form')) el.remove();
+  const text = clone.textContent.replace(/\s+/g, ' ').trim();
+  return text.length > MAX_ANCHOR_TEXT ? text.slice(0, MAX_ANCHOR_TEXT) + '…' : text;
+}
+
+function closeAllForms() {
+  for (const f of document.querySelectorAll('.peek-form')) f.remove();
+}
+
+function openForm(block) {
+  closeAllForms();
+
+  const form = document.createElement('form');
+  form.className = 'peek-form';
+  form.innerHTML = `
+    <textarea class="peek-form-textarea" placeholder="Add a note…" required rows="3"></textarea>
+    <div class="peek-form-error" hidden></div>
+    <div class="peek-form-actions">
+      <span class="peek-form-hint">⌘/Ctrl+Enter to save · Esc to cancel</span>
+      <button type="button" class="peek-form-cancel">Cancel</button>
+      <button type="submit" class="peek-form-save">Save</button>
+    </div>
+  `;
+  block.after(form);
+
+  const ta = form.querySelector('.peek-form-textarea');
+  ta.focus();
+
+  form.querySelector('.peek-form-cancel').addEventListener('click', () => form.remove());
+  ta.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      form.remove();
+    } else if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
+      e.preventDefault();
+      form.requestSubmit();
+    }
+  });
+
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const body = ta.value.trim();
+    if (!body) return;
+    const saveBtn = form.querySelector('.peek-form-save');
+    const errEl = form.querySelector('.peek-form-error');
+    errEl.hidden = true;
+    saveBtn.disabled = true;
+    try {
+      await createNote(block, body);
+      form.remove();
+      await refresh();
+    } catch (err) {
+      errEl.textContent = err.message;
+      errEl.hidden = false;
+      saveBtn.disabled = false;
+    }
+  });
+}
+
+async function createNote(block, body) {
+  const res = await fetch('/annotations', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      anchor: {
+        block_hash: block.id.slice(HASH_PREFIX.length),
+        block_text: blockText(block),
+        block_type: detectBlockType(block),
+      },
+      body,
+    }),
+  });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+}
+
+function wireMarkerClicks() {
+  document.addEventListener('click', (e) => {
+    const marker = e.target.closest('.peek-marker');
+    if (!marker) return;
+    const block = marker.closest('[data-peek-block]');
+    if (!block) return;
+    e.preventDefault();
+    e.stopPropagation();
+    openForm(block);
+  });
+}
+
 function wireCollapse() {
   const btn = document.getElementById('peek-collapse');
   btn?.addEventListener('click', () => {
@@ -113,11 +240,18 @@ function wireCollapse() {
   });
 }
 
+async function refresh() {
+  const notes = await loadNotes();
+  renderSidebar(notes);
+  updateMarkers(notes);
+}
+
 async function init() {
   wireCollapse();
+  injectMarkers();
+  wireMarkerClicks();
   try {
-    const notes = await loadNotes();
-    renderSidebar(notes);
+    await refresh();
   } catch (err) {
     renderError(`Failed to load notes: ${err.message}`);
   }
