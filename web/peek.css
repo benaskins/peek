@@ -161,6 +161,71 @@ body.peek-collapsed .peek-sidebar-header h2 {
   color: var(--peek-muted);
 }
 
+.peek-note-controls {
+  margin-top: 6px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+.peek-note-resolved {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-right: auto;
+  font-size: 11px;
+  color: var(--peek-muted);
+  cursor: pointer;
+  user-select: none;
+}
+
+.peek-note-resolved input {
+  margin: 0;
+  cursor: pointer;
+  accent-color: #1f6feb;
+}
+
+.peek-note-edit,
+.peek-note-delete {
+  background: none;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  padding: 2px 8px;
+  font: inherit;
+  font-size: 11px;
+  color: var(--peek-muted);
+  cursor: pointer;
+  line-height: 1.4;
+}
+
+.peek-note-edit:hover,
+.peek-note-delete:hover {
+  border-color: var(--peek-border);
+  color: var(--peek-fg);
+}
+
+.peek-note-delete.confirm {
+  background: var(--peek-error);
+  border-color: var(--peek-error);
+  color: #fff;
+}
+
+.peek-note-delete.confirm:hover {
+  background: var(--peek-error);
+  color: #fff;
+}
+
+.peek-note.editing .peek-note-body,
+.peek-note.editing .peek-note-time,
+.peek-note.editing .peek-note-controls {
+  display: none;
+}
+
+.peek-note-edit-form {
+  margin: 6px 0 0;
+}
+
 /* per-block hover marker */
 
 [data-peek-block] {

@@ -64,8 +64,139 @@ function renderNote(note) {
     }
   }
 
-  li.append(anchor, body, time);
+  const controls = document.createElement('div');
+  controls.className = 'peek-note-controls';
+
+  const resolvedLabel = document.createElement('label');
+  resolvedLabel.className = 'peek-note-resolved';
+  resolvedLabel.title = 'Mark as resolved';
+  const checkbox = document.createElement('input');
+  checkbox.type = 'checkbox';
+  checkbox.checked = !!note.resolved;
+  checkbox.addEventListener('change', () => {
+    updateNote(note.id, { resolved: checkbox.checked }).catch(() => {
+      checkbox.checked = !checkbox.checked;
+    });
+  });
+  const resolvedText = document.createElement('span');
+  resolvedText.textContent = 'resolved';
+  resolvedLabel.append(checkbox, resolvedText);
+
+  const editBtn = document.createElement('button');
+  editBtn.type = 'button';
+  editBtn.className = 'peek-note-edit';
+  editBtn.textContent = 'edit';
+  editBtn.addEventListener('click', () => openEditNote(note, li));
+
+  const deleteBtn = document.createElement('button');
+  deleteBtn.type = 'button';
+  deleteBtn.className = 'peek-note-delete';
+  deleteBtn.textContent = 'delete';
+  wireConfirmDelete(deleteBtn, note.id);
+
+  controls.append(resolvedLabel, editBtn, deleteBtn);
+
+  li.append(anchor, body, time, controls);
   return li;
+}
+
+function wireConfirmDelete(btn, noteId) {
+  let armed = false;
+  let timer = null;
+  const reset = () => {
+    armed = false;
+    btn.textContent = 'delete';
+    btn.classList.remove('confirm');
+    if (timer) { clearTimeout(timer); timer = null; }
+  };
+  btn.addEventListener('click', async (e) => {
+    e.stopPropagation();
+    if (!armed) {
+      armed = true;
+      btn.textContent = 'confirm?';
+      btn.classList.add('confirm');
+      timer = setTimeout(reset, 3000);
+      return;
+    }
+    reset();
+    try {
+      await deleteNote(noteId);
+    } catch (err) {
+      btn.title = err.message;
+    }
+  });
+  btn.addEventListener('blur', reset);
+}
+
+function openEditNote(note, li) {
+  closeAllForms();
+  for (const el of document.querySelectorAll('.peek-note.editing')) {
+    el.classList.remove('editing');
+    const f = el.querySelector('.peek-note-edit-form');
+    if (f) f.remove();
+  }
+  li.classList.add('editing');
+
+  const form = document.createElement('form');
+  form.className = 'peek-form peek-note-edit-form';
+  form.innerHTML = `
+    <textarea class="peek-form-textarea" rows="3" required></textarea>
+    <div class="peek-form-error" hidden></div>
+    <div class="peek-form-actions">
+      <span class="peek-form-hint">⌘/Ctrl+Enter to save · Esc to cancel</span>
+      <button type="button" class="peek-form-cancel">Cancel</button>
+      <button type="submit" class="peek-form-save">Save</button>
+    </div>
+  `;
+  const ta = form.querySelector('.peek-form-textarea');
+  ta.value = note.body;
+  li.querySelector('.peek-note-body').after(form);
+  ta.focus();
+  ta.setSelectionRange(ta.value.length, ta.value.length);
+
+  const close = () => {
+    li.classList.remove('editing');
+    form.remove();
+  };
+
+  form.querySelector('.peek-form-cancel').addEventListener('click', close);
+  ta.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') { e.preventDefault(); close(); }
+    else if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { e.preventDefault(); form.requestSubmit(); }
+  });
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const body = ta.value.trim();
+    if (!body) return;
+    const saveBtn = form.querySelector('.peek-form-save');
+    const errEl = form.querySelector('.peek-form-error');
+    errEl.hidden = true;
+    saveBtn.disabled = true;
+    try {
+      await updateNote(note.id, { body });
+      close();
+    } catch (err) {
+      errEl.textContent = err.message;
+      errEl.hidden = false;
+      saveBtn.disabled = false;
+    }
+  });
+}
+
+async function updateNote(id, patch) {
+  const res = await fetch(`/annotations/${encodeURIComponent(id)}`, {
+    method: 'PUT',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(patch),
+  });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  await refresh();
+}
+
+async function deleteNote(id) {
+  const res = await fetch(`/annotations/${encodeURIComponent(id)}`, { method: 'DELETE' });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  await refresh();
 }
 
 function renderSidebar(notes) {
