@@ -58,6 +58,9 @@ func blockText(n ast.Node, src []byte) string {
 		case *ast.CodeBlock:
 			appendBlockLines(&buf, v, src)
 			return ast.WalkSkipChildren, nil
+		case *ast.HTMLBlock:
+			appendBlockLines(&buf, v, src)
+			return ast.WalkSkipChildren, nil
 		}
 		return ast.WalkContinue, nil
 	})

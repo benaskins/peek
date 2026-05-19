@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"fmt"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -63,5 +64,29 @@ func TestRender_PreservesInnerRendering(t *testing.T) {
 	html := renderToString(t, "Just **bold** text.\n")
 	if !strings.Contains(html, "<strong>bold</strong>") {
 		t.Errorf("expected inline rendering to still work, got:\n%s", html)
+	}
+}
+
+func TestRender_DistinctHTMLBlocksGetDistinctIDs(t *testing.T) {
+	// Two HTML blocks (e.g. mermaid diagrams after extractMermaid) under the
+	// same heading must hash to different IDs based on their raw content.
+	src := "# Diagrams\n\n" +
+		"<div class=\"mermaid\">\ngraph LR; A-->B\n</div>\n\n" +
+		"<div class=\"mermaid\">\ngraph LR; X-->Y\n</div>\n"
+	html := renderToString(t, src)
+
+	re := regexp.MustCompile(`id="peek-([a-f0-9]+)"`)
+	matches := re.FindAllStringSubmatch(html, -1)
+	if len(matches) < 3 {
+		t.Fatalf("expected 3 wrappers (heading + 2 html blocks), got %d:\n%s", len(matches), html)
+	}
+	ids := make(map[string]int)
+	for _, m := range matches {
+		ids[m[1]]++
+	}
+	for id, count := range ids {
+		if count > 1 {
+			t.Errorf("id %q appeared %d times — distinct HTML blocks must hash distinctly", id, count)
+		}
 	}
 }
