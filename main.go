@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"runtime"
+	"sync"
 	"syscall"
 	"time"
 )
@@ -37,11 +38,33 @@ func main() {
 
 	api := NewServer(sc, ServerOpts{Debounce: 300 * time.Millisecond})
 
+	done := make(chan struct{})
+	var shutdownOnce sync.Once
+	shutdown := func(reason string) {
+		shutdownOnce.Do(func() {
+			fmt.Fprintln(os.Stderr, "peek: shutting down ("+reason+")")
+			close(done)
+		})
+	}
+
+	watcher := NewWatcher(WatcherOpts{
+		Grace:    30 * time.Second,
+		Shutdown: shutdown,
+	})
+
 	mux := http.NewServeMux()
 	mux.Handle("GET /{$}", newPageHandler(path))
 	mux.Handle("GET /static/", http.StripPrefix("/static/", newStaticHandler()))
 	mux.Handle("/annotations", api)
 	mux.Handle("/annotations/", api)
+	mux.HandleFunc("POST /heartbeat", func(w http.ResponseWriter, _ *http.Request) {
+		watcher.Beat()
+		w.WriteHeader(http.StatusNoContent)
+	})
+	mux.HandleFunc("POST /bye", func(w http.ResponseWriter, _ *http.Request) {
+		watcher.Bye()
+		w.WriteHeader(http.StatusNoContent)
+	})
 
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -55,16 +78,21 @@ func main() {
 			fmt.Fprintln(os.Stderr, "peek: serve:", err)
 		}
 	}()
+	go watcher.Run(done)
 
-	fmt.Fprintln(os.Stderr, "peek:", url, "(Ctrl+C to stop)")
+	fmt.Fprintln(os.Stderr, "peek:", url, "(Ctrl+C to stop, or just close the tab)")
 	if err := openBrowser(url); err != nil {
 		fmt.Fprintln(os.Stderr, "peek: open:", err)
 	}
 
 	sigs := make(chan os.Signal, 1)
 	signal.Notify(sigs, os.Interrupt, syscall.SIGTERM)
-	<-sigs
-	fmt.Fprintln(os.Stderr, "peek: shutting down")
+	go func() {
+		<-sigs
+		shutdown("signal")
+	}()
+
+	<-done
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()

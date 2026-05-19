@@ -1,8 +1,10 @@
 // peek annotation sidebar — fetches /annotations, renders the sidebar,
-// and wires per-block markers + inline note-input forms.
+// and wires per-block markers + inline note-input forms. Also keeps a
+// heartbeat alive so the server can shut itself down when the tab closes.
 
 const HASH_PREFIX = 'peek-';
 const MAX_ANCHOR_TEXT = 200;
+const HEARTBEAT_INTERVAL_MS = 5000;
 
 async function loadNotes() {
   const res = await fetch('/annotations');
@@ -246,7 +248,19 @@ async function refresh() {
   updateMarkers(notes);
 }
 
+function wireLifecycle() {
+  const beat = () => {
+    fetch('/heartbeat', { method: 'POST', keepalive: true }).catch(() => {});
+  };
+  beat();
+  setInterval(beat, HEARTBEAT_INTERVAL_MS);
+  addEventListener('pagehide', () => {
+    navigator.sendBeacon('/bye');
+  });
+}
+
 async function init() {
+  wireLifecycle();
   wireCollapse();
   injectMarkers();
   wireMarkerClicks();
