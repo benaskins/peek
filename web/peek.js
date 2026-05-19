@@ -27,21 +27,27 @@ function indexSections() {
   return map;
 }
 
-function groupBySection(notes, sections) {
-  const groups = new Map();
+function partitionNotes(notes, sections) {
+  const sectioned = new Map();
+  const orphans = [];
   for (const note of notes) {
     const hash = note.anchor?.block_hash;
-    const section = hash && sections.has(hash) ? sections.get(hash) : null;
-    const key = section ?? '(unsectioned)';
-    if (!groups.has(key)) groups.set(key, []);
-    groups.get(key).push(note);
+    if (!hash || !sections.has(hash)) {
+      orphans.push(note);
+      continue;
+    }
+    const key = sections.get(hash) || '(intro)';
+    if (!sectioned.has(key)) sectioned.set(key, []);
+    sectioned.get(key).push(note);
   }
-  return groups;
+  return { sectioned, orphans };
 }
 
-function renderNote(note) {
+function renderNote(note, opts = {}) {
   const li = document.createElement('li');
-  li.className = 'peek-note' + (note.resolved ? ' resolved' : '');
+  li.className = 'peek-note'
+    + (note.resolved ? ' resolved' : '')
+    + (opts.orphan ? ' orphan' : '');
   li.dataset.noteId = note.id;
 
   const anchor = document.createElement('div');
@@ -213,9 +219,9 @@ function renderSidebar(notes) {
   }
 
   const sections = indexSections();
-  const groups = groupBySection(notes, sections);
+  const { sectioned, orphans } = partitionNotes(notes, sections);
 
-  for (const [section, group] of groups) {
+  for (const [section, group] of sectioned) {
     const h3 = document.createElement('h3');
     h3.className = 'peek-section';
     h3.textContent = section;
@@ -224,6 +230,19 @@ function renderSidebar(notes) {
     const ul = document.createElement('ul');
     ul.className = 'peek-notes-list';
     for (const note of group) ul.appendChild(renderNote(note));
+    container.appendChild(ul);
+  }
+
+  if (orphans.length > 0) {
+    const h3 = document.createElement('h3');
+    h3.className = 'peek-section peek-section-orphans';
+    h3.textContent = `Orphaned notes (${orphans.length})`;
+    h3.title = "These notes' anchors no longer match any block in the document";
+    container.appendChild(h3);
+
+    const ul = document.createElement('ul');
+    ul.className = 'peek-notes-list';
+    for (const note of orphans) ul.appendChild(renderNote(note, { orphan: true }));
     container.appendChild(ul);
   }
 }

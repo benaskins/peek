@@ -226,6 +226,29 @@ body.peek-collapsed .peek-sidebar-header h2 {
   margin: 6px 0 0;
 }
 
+/* orphan notes — anchor block no longer in the rendered DOM */
+
+.peek-section-orphans {
+  color: var(--peek-error);
+}
+
+.peek-note.orphan {
+  border-color: var(--peek-error);
+  background: rgba(207, 34, 46, 0.06);
+}
+
+@media (prefers-color-scheme: dark) {
+  .peek-note.orphan {
+    background: rgba(255, 123, 114, 0.08);
+  }
+}
+
+.peek-note.orphan .peek-note-anchor {
+  color: var(--peek-error);
+  font-style: italic;
+  border-left-color: var(--peek-error);
+}
+
 /* per-block hover marker */
 
 [data-peek-block] {
